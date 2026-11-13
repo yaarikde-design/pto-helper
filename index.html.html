@@ -1,0 +1,1447 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>ПТО Помощник — Полевой сборщик ИД</title>
+
+  <!-- Подключение шрифта Inter для высокой читаемости на экране смартфона -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CSS для адаптивного интерфейса -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#fff7ed',
+              100: '#ffedd5',
+              500: '#f97316',
+              600: '#ea580c',
+              700: '#c2410c',
+            },
+            slate: {
+              850: '#172033',
+              900: '#0f172a',
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- Библиотека SheetJS для генерации настоящих файлов Excel (.xlsx) прямо в браузере -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+
+  <style>
+    /* Улучшение тактильного отклика и читаемости на солнце */
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background-color: #f1f5f9;
+      color: #0f172a;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* Плавная анимация уведомлений */
+    @keyframes slideUp {
+      from { transform: translateY(100%); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .toast-enter {
+      animation: slideUp 0.25s ease-out forwards;
+    }
+    /* Убираем стандартные стрелки у числовых полей */
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col pb-24 md:pb-10">
+
+  <!-- ВЕРХНЯЯ ПАНЕЛЬ (ШАПКА ПРИЛОЖЕНИЯ) -->
+  <header class="bg-slate-900 text-white sticky top-0 z-30 shadow-md">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
+      <!-- Логотип и название -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-orange-500 flex items-center justify-center shadow-inner shrink-0">
+          <!-- Иконка каски / чертежа -->
+          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-bold text-base sm:text-lg leading-tight tracking-tight">ПТО Помощник</h1>
+            <span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30">MVP</span>
+          </div>
+          <!-- Индикатор офлайн-статуса -->
+          <div class="flex items-center gap-1.5 text-xs text-slate-300 mt-0.5">
+            <span id="statusDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span id="statusText">Офлайн-режим готов (LocalStorage)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Правая часть: Счетчик и кнопка установки PWA -->
+      <div class="flex items-center gap-2">
+        <div class="hidden sm:flex items-center gap-1.5 bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-xl text-xs font-medium">
+          <span class="text-slate-400">Записей в базе:</span>
+          <span id="headerCounter" class="font-bold text-orange-400 text-sm">0</span>
+        </div>
+        <button onclick="openInstallModal()" class="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-white border border-slate-700 px-3 py-2 rounded-xl text-xs font-semibold transition cursor-pointer" title="Установить как приложение">
+          <svg class="w-4 h-4 text-orange-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          <span class="hidden sm:inline">Установить</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ДЕСКТОПНАЯ НАВИГАЦИЯ (ВКЛАДКИ) -->
+    <nav class="hidden md:block bg-slate-850 border-t border-slate-800">
+      <div class="max-w-5xl mx-auto px-4 flex gap-2 py-2">
+        <button onclick="switchTab('form')" id="tab-desktop-form" class="nav-tab-desktop flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition bg-orange-600 text-white cursor-pointer">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+          Ввод данных (Объект)
+        </button>
+        <button onclick="switchTab('registry')" id="tab-desktop-registry" class="nav-tab-desktop flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition text-slate-300 hover:bg-slate-800 cursor-pointer">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+          Реестр ИД и Excel
+          <span id="desktopBadgeCount" class="ml-1 px-2 py-0.5 text-xs rounded-full bg-slate-700 text-white">0</span>
+        </button>
+        <button onclick="switchTab('calc')" id="tab-desktop-calc" class="nav-tab-desktop flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition text-slate-300 hover:bg-slate-800 cursor-pointer">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+          Калькулятор труб ПТО
+        </button>
+      </div>
+    </nav>
+  </header>
+
+  <!-- ОСНОВНОЙ КОНТЕЙНЕР -->
+  <main class="flex-1 max-w-5xl w-full mx-auto px-4 pt-4 sm:pt-6">
+
+    <!-- =================================================================== -->
+    <!-- ВКЛАДКА 1: ФОРМА БЫСТРОГО ВВОДА ДАННЫХ НА ПЛОЩАДКЕ                  -->
+    <!-- =================================================================== -->
+    <section id="view-form" class="space-y-4">
+      <!-- Баннер-подсказка / режим редактирования -->
+      <div id="editBanner" class="hidden bg-amber-50 border-2 border-amber-400 rounded-2xl p-3.5 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5 text-amber-900 text-sm font-semibold">
+          <svg class="w-5 h-5 text-amber-600 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+          <span>Редактирование существующей записи реестра</span>
+        </div>
+        <button type="button" onclick="cancelEdit()" class="text-xs font-bold uppercase px-3 py-1.5 rounded-xl bg-amber-200 hover:bg-amber-300 text-amber-950 transition cursor-pointer">
+          Отмена
+        </button>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-5 pb-3 border-b border-slate-100">
+          <div>
+            <h2 class="text-lg sm:text-xl font-extrabold text-slate-900">Полевой журнал / Сбор данных ИД</h2>
+            <p class="text-xs sm:text-sm text-slate-500 mt-0.5">Заполните данные на участке — они сохранятся в память устройства даже без связи</p>
+          </div>
+          <button type="button" onclick="loadDemoData(true)" class="text-xs font-semibold text-orange-600 hover:text-orange-700 bg-orange-50 hover:bg-orange-100 px-3 py-2 rounded-xl border border-orange-200 transition cursor-pointer">
+            + Загрузить демо-примеры
+          </button>
+        </div>
+
+        <form id="ptoForm" onsubmit="handleFormSubmit(event)" class="space-y-4">
+          <input type="hidden" id="editRecordId" value="" />
+
+          <!-- 1. Объект / Титул / Участок (с автоподстановкой ранее введенных) -->
+          <div>
+            <label for="fieldObject" class="block text-sm font-bold text-slate-800 mb-1.5">
+              Объект / Титул / Участок <span class="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              id="fieldObject"
+              list="savedObjectsList"
+              required
+              placeholder="Например: Газопровод высокого давления, ПК 12+50"
+              class="w-full px-4 py-3.5 text-base bg-slate-50 border-2 border-slate-300 rounded-xl focus:bg-white focus:border-orange-500 focus:outline-none transition font-medium"
+            />
+            <datalist id="savedObjectsList"></datalist>
+            <!-- Быстрые чипсы последних объектов -->
+            <div id="quickObjectsChips" class="flex flex-wrap gap-1.5 mt-2"></div>
+          </div>
+
+          <!-- 2. Вид работ и Дата -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div class="sm:col-span-2">
+              <label for="fieldWorkType" class="block text-sm font-bold text-slate-800 mb-1.5">
+                Вид работ / Конструктив <span class="text-red-500">*</span>
+              </label>
+              <select
+                id="fieldWorkType"
+                required
+                class="w-full px-4 py-3.5 text-base bg-slate-50 border-2 border-slate-300 rounded-xl focus:bg-white focus:border-orange-500 focus:outline-none transition font-medium"
+              >
+                <option value="Сварочно-монтажные работы">Сварочно-монтажные работы</option>
+                <option value="Входной контроль материалов">Входной контроль материалов</option>
+                <option value="Изоляция и антикор">Изоляция и антикор</option>
+                <option value="Земляные работы">Земляные работы</option>
+                <option value="Испытания на прочность и герметичность">Испытания на прочность и герметичность</option>
+                <option value="Геодезический контроль">Геодезический контроль</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="fieldDate" class="block text-sm font-bold text-slate-800 mb-1.5">
+                Дата работ <span class="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                id="fieldDate"
+                required
+                class="w-full px-4 py-3.5 text-base bg-slate-50 border-2 border-slate-300 rounded-xl focus:bg-white focus:border-orange-500 focus:outline-none transition font-medium"
+              />
+            </div>
+          </div>
+
+          <!-- 3. Наименование элемента и Номер паспорта/сертификата -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label for="fieldElement" class="block text-sm font-bold text-slate-800 mb-1.5">
+                Наименование элемента / Материала / Стыка <span class="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                id="fieldElement"
+                required
+                placeholder="Например: Труба 159х6 ст.20 или Стык №14"
+                class="w-full px-4 py-3.5 text-base bg-slate-50 border-2 border-slate-300 rounded-xl focus:bg-white focus:border-orange-500 focus:outline-none transition font-medium"
+              />
+            </div>
+
+            <div>
+              <label for="fieldDocNumber" class="block text-sm font-bold text-slate-800 mb-1.5">
+                № Паспорта / Сертификата / Протокола
+              </label>
+              <input
+                type="text"
+                id="fieldDocNumber"
+                placeholder="Например: Серт. №4821-К от 12.10"
+                class="w-full px-4 py-3.5 text-base bg-slate-50 border-2 border-slate-300 rounded-xl focus:bg-white focus:border-orange-500 focus:outline-none transition font-medium"
+              />
+            </div>
+          </div>
+
+          <!-- 4. Объем и Единица измерения -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div class="col-span-1 sm:col-span-2">
+              <label for="fieldVolume" class="block text-sm font-bold text-slate-800 mb-1.5">
+                Объем / Кол-во <span class="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                id="fieldVolume"
+                required
+                placeholder="0.00"
+                class="w-full px-4 py-3.5 text-base bg-slate-50 border-2 border-slate-300 rounded-xl focus:bg-white focus:border-orange-500 focus:outline-none transition font-bold"
+              />
+            </div>
+
+            <div class="col-span-1 sm:col-span-2">
+              <label for="fieldUnit" class="block text-sm font-bold text-slate-800 mb-1.5">
+                Ед. изм.
+              </label>
+              <select
+                id="fieldUnit"
+                class="w-full px-4 py-3.5 text-base bg-slate-50 border-2 border-slate-300 rounded-xl focus:bg-white focus:border-orange-500 focus:outline-none transition font-semibold"
+              >
+                <option value="пог. м">пог. м</option>
+                <option value="шт.">шт.</option>
+                <option value="стык">стык</option>
+                <option value="м²">м²</option>
+                <option value="м³">м³</option>
+                <option value="т">т</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 5. Статус ИД / Приемки (Крупные тактильные кнопки-переключатели) -->
+          <div>
+            <label class="block text-sm font-bold text-slate-800 mb-2">
+              Статус ИД / Приемки стройконтролем
+            </label>
+            <input type="hidden" id="fieldStatus" value="В работе" />
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <button
+                type="button"
+                onclick="selectStatus('Готово к сдаче')"
+                data-status="Готово к сдаче"
+                class="status-btn flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl border-2 text-sm font-bold transition cursor-pointer border-slate-200 bg-slate-50 text-slate-700"
+              >
+                <span class="w-3 h-3 rounded-full bg-emerald-500"></span>
+                Готово к сдаче
+              </button>
+
+              <button
+                type="button"
+                onclick="selectStatus('В работе')"
+                data-status="В работе"
+                class="status-btn flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl border-2 text-sm font-bold transition cursor-pointer border-amber-500 bg-amber-50 text-amber-900"
+              >
+                <span class="w-3 h-3 rounded-full bg-amber-500"></span>
+                В работе
+              </button>
+
+              <button
+                type="button"
+                onclick="selectStatus('Замечание стройконтроля')"
+                data-status="Замечание стройконтроля"
+                class="status-btn flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl border-2 text-sm font-bold transition cursor-pointer border-slate-200 bg-slate-50 text-slate-700"
+              >
+                <span class="w-3 h-3 rounded-full bg-rose-500"></span>
+                Замечание СК
+              </button>
+            </div>
+          </div>
+
+          <!-- 6. Примечание -->
+          <div>
+            <label for="fieldNote" class="block text-sm font-bold text-slate-800 mb-1.5">
+              Примечание (клеймо сварщика, номер партии, замечание)
+            </label>
+            <textarea
+              id="fieldNote"
+              rows="2"
+              placeholder="Дополнительная информация для формирования АОСР или реестра..."
+              class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-300 rounded-xl focus:bg-white focus:border-orange-500 focus:outline-none transition"
+            ></textarea>
+          </div>
+
+          <!-- Кнопка сохранения -->
+          <div class="pt-2 flex flex-col sm:flex-row gap-3">
+            <button
+              type="submit"
+              id="submitBtn"
+              class="flex-1 bg-orange-600 hover:bg-orange-700 active:bg-orange-800 text-white font-extrabold text-base sm:text-lg py-4 px-6 rounded-2xl shadow-lg shadow-orange-600/25 flex items-center justify-center gap-2.5 transition cursor-pointer"
+            >
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              <span id="submitBtnText">Сохранить в реестр (Офлайн)</span>
+            </button>
+
+            <button
+              type="button"
+              onclick="switchTab('registry')"
+              class="sm:w-auto bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm py-4 px-5 rounded-2xl flex items-center justify-center gap-2 transition cursor-pointer"
+            >
+              <span>Перейти в реестр</span>
+              <span id="formBtnCounter" class="bg-orange-500 text-white text-xs font-extrabold px-2 py-0.5 rounded-full">0</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- ВКЛАДКА 2: РЕЕСТР ЗАПИСЕЙ И ВЫГРУЗКА В EXCEL (.XLSX)                -->
+    <!-- =================================================================== -->
+    <section id="view-registry" class="hidden space-y-4">
+      <!-- Панель действий и экспорта -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-5">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h2 class="text-lg sm:text-xl font-extrabold text-slate-900">Реестр исполнительной документации</h2>
+            <p class="text-xs sm:text-sm text-slate-500 mt-0.5">
+              Всего позиций: <strong id="regTotalCount" class="text-slate-900">0</strong> •
+              Готово к сдаче: <strong id="regReadyCount" class="text-emerald-600">0</strong> •
+              Замечания: <strong id="regIssueCount" class="text-rose-600">0</strong>
+            </p>
+          </div>
+
+          <!-- Главная кнопка экспорта в Excel -->
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onclick="exportToExcel()"
+              class="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-extrabold text-sm sm:text-base py-3.5 px-5 rounded-xl shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition cursor-pointer"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span>Выгрузить реестр в Excel (.xlsx)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Поиск и фильтры -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 pt-4 border-t border-slate-100">
+          <div class="relative">
+            <input
+              type="text"
+              id="searchInput"
+              oninput="renderRegistry()"
+              placeholder="Поиск по объекту, трубе, паспорту..."
+              class="w-full pl-9 pr-3 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:border-orange-500 focus:outline-none"
+            />
+            <svg class="w-4 h-4 text-slate-400 absolute left-3 top-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+
+          <select
+            id="filterWorkType"
+            onchange="renderRegistry()"
+            class="w-full px-3 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:border-orange-500 focus:outline-none font-medium"
+          >
+            <option value="ALL">Все виды работ</option>
+            <option value="Сварочно-монтажные работы">Сварочно-монтажные работы</option>
+            <option value="Входной контроль материалов">Входной контроль материалов</option>
+            <option value="Изоляция и антикор">Изоляция и антикор</option>
+            <option value="Земляные работы">Земляные работы</option>
+            <option value="Испытания на прочность и герметичность">Испытания на прочность и герметичность</option>
+            <option value="Геодезический контроль">Геодезический контроль</option>
+          </select>
+
+          <select
+            id="filterStatus"
+            onchange="renderRegistry()"
+            class="w-full px-3 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:border-orange-500 focus:outline-none font-medium"
+          >
+            <option value="ALL">Все статусы ИД</option>
+            <option value="Готово к сдаче">🟢 Готово к сдаче</option>
+            <option value="В работе">🟡 В работе</option>
+            <option value="Замечание стройконтроля">🔴 Замечание стройконтроля</option>
+          </select>
+        </div>
+
+        <!-- Сервисные кнопки (Демо-данные и очистка) -->
+        <div class="flex flex-wrap items-center justify-between gap-2 mt-3 pt-3 border-t border-slate-100 text-xs">
+          <button type="button" onclick="loadDemoData(true)" class="text-orange-600 hover:text-orange-700 font-semibold flex items-center gap-1 py-1 px-2 rounded-lg hover:bg-orange-50 cursor-pointer">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Добавить демо-данные (для показа клиенту)
+          </button>
+
+          <button type="button" onclick="requestClearAll()" class="text-rose-600 hover:text-rose-700 font-semibold flex items-center gap-1 py-1 px-2 rounded-lg hover:bg-rose-50 cursor-pointer">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            Очистить весь реестр
+          </button>
+        </div>
+      </div>
+
+      <!-- Контейнер для списка записей (Карточки на мобильном / Таблица на ПК) -->
+      <div id="registryContainer"></div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- ВКЛАДКА 3: БЫСТРЫЙ КАЛЬКУЛЯТОР ПТО (ТРУБЫ: ПЛОЩАДЬ И ВЕС)           -->
+    <!-- =================================================================== -->
+    <section id="view-calc" class="hidden space-y-4">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
+        <div class="mb-5 pb-3 border-b border-slate-100">
+          <h2 class="text-lg sm:text-xl font-extrabold text-slate-900">Карманный калькулятор инженера ПТО</h2>
+          <p class="text-xs sm:text-sm text-slate-500 mt-0.5">Расчет площади изоляции/окраски и теоретического веса стальных труб (ГОСТ 10704 / 8732)</p>
+        </div>
+
+        <!-- Быстрые пресеты популярных диаметров -->
+        <div class="mb-4">
+          <span class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Популярные типоразмеры (быстрый выбор):</span>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" onclick="applyPipePreset(57, 3.5)" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-orange-100 hover:text-orange-800 text-xs font-bold text-slate-700 border border-slate-200 transition cursor-pointer">Ø 57×3.5</button>
+            <button type="button" onclick="applyPipePreset(89, 4)" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-orange-100 hover:text-orange-800 text-xs font-bold text-slate-700 border border-slate-200 transition cursor-pointer">Ø 89×4.0</button>
+            <button type="button" onclick="applyPipePreset(108, 4)" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-orange-100 hover:text-orange-800 text-xs font-bold text-slate-700 border border-slate-200 transition cursor-pointer">Ø 108×4.0</button>
+            <button type="button" onclick="applyPipePreset(159, 6)" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-orange-100 hover:text-orange-800 text-xs font-bold text-slate-700 border border-slate-200 transition cursor-pointer">Ø 159×6.0</button>
+            <button type="button" onclick="applyPipePreset(219, 6)" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-orange-100 hover:text-orange-800 text-xs font-bold text-slate-700 border border-slate-200 transition cursor-pointer">Ø 219×6.0</button>
+            <button type="button" onclick="applyPipePreset(325, 8)" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-orange-100 hover:text-orange-800 text-xs font-bold text-slate-700 border border-slate-200 transition cursor-pointer">Ø 325×8.0</button>
+            <button type="button" onclick="applyPipePreset(530, 8)" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-orange-100 hover:text-orange-800 text-xs font-bold text-slate-700 border border-slate-200 transition cursor-pointer">Ø 530×8.0</button>
+          </div>
+        </div>
+
+        <!-- Поля ввода параметров трубы -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label for="calcDiameter" class="block text-sm font-bold text-slate-800 mb-1.5">
+              Наружный диаметр Dн (мм)
+            </label>
+            <input
+              type="number"
+              step="any"
+              min="1"
+              id="calcDiameter"
+              value="159"
+              oninput="calculatePipe()"
+              class="w-full px-4 py-3.5 text-lg font-extrabold bg-slate-50 border-2 border-slate-300 rounded-xl focus:bg-white focus:border-orange-500 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label for="calcWall" class="block text-sm font-bold text-slate-800 mb-1.5">
+              Толщина стенки S (мм)
+            </label>
+            <input
+              type="number"
+              step="any"
+              min="0.5"
+              id="calcWall"
+              value="6"
+              oninput="calculatePipe()"
+              class="w-full px-4 py-3.5 text-lg font-extrabold bg-slate-50 border-2 border-slate-300 rounded-xl focus:bg-white focus:border-orange-500 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label for="calcLength" class="block text-sm font-bold text-slate-800 mb-1.5">
+              Длина участка L (пог. м)
+            </label>
+            <input
+              type="number"
+              step="any"
+              min="0.1"
+              id="calcLength"
+              value="120"
+              oninput="calculatePipe()"
+              class="w-full px-4 py-3.5 text-lg font-extrabold bg-slate-50 border-2 border-slate-300 rounded-xl focus:bg-white focus:border-orange-500 focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <!-- Карточки результатов расчета -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+          <!-- Результат 1: Площадь изоляции / АКЗ -->
+          <div class="bg-slate-900 text-white rounded-2xl p-5 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-orange-400">Изоляция и антикор (АКЗ)</span>
+                <span class="text-xs text-slate-400">S = π · D · L</span>
+              </div>
+              <div class="mt-3 flex items-baseline gap-2">
+                <span id="resArea" class="text-3xl sm:text-4xl font-extrabold text-white">59.94</span>
+                <span class="text-base font-semibold text-slate-300">м²</span>
+              </div>
+              <p class="text-xs text-slate-400 mt-1">
+                На 1 пог. м приходится: <strong id="resAreaPerMeter" class="text-slate-200">0.500</strong> м²
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onclick="transferCalcToForm('area')"
+              class="mt-5 w-full bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white font-bold text-sm py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+              Перенести площадь в форму ИД (м²)
+            </button>
+          </div>
+
+          <!-- Результат 2: Теоретический вес трубы -->
+          <div class="bg-slate-900 text-white rounded-2xl p-5 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-emerald-400">Теоретический вес стали</span>
+                <span class="text-xs text-slate-400">ρ = 7850 кг/м³</span>
+              </div>
+              <div class="mt-3 flex items-baseline gap-3">
+                <div>
+                  <span id="resWeightTons" class="text-3xl sm:text-4xl font-extrabold text-white">2.717</span>
+                  <span class="text-base font-semibold text-slate-300">т</span>
+                </div>
+                <span class="text-sm text-slate-400">(<span id="resWeightKg">2717.0</span> кг)</span>
+              </div>
+              <p class="text-xs text-slate-400 mt-1">
+                Масса 1 пог. м трубы: <strong id="resWeightPerMeter" class="text-slate-200">22.64</strong> кг/м
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onclick="transferCalcToForm('weight')"
+              class="mt-5 w-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-sm py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+              Перенести тоннаж в форму ИД (т)
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- НИЖНЯЯ ПАНЕЛЬ НАВИГАЦИИ ДЛЯ МОБИЛЬНЫХ УСТРОЙСТВ (УДОБНО ПОД БОЛЬШОЙ ПАЛЕЦ) -->
+  <nav class="md:hidden fixed bottom-0 inset-x-0 bg-slate-900 border-t border-slate-800 z-30 px-2 py-1.5 shadow-2xl">
+    <div class="grid grid-cols-3 gap-1">
+      <button onclick="switchTab('form')" id="tab-mobile-form" class="nav-tab-mobile flex flex-col items-center justify-center py-2 px-1 rounded-xl text-orange-400 bg-slate-800 font-bold text-xs transition cursor-pointer">
+        <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+        <span>Ввод</span>
+      </button>
+
+      <button onclick="switchTab('registry')" id="tab-mobile-registry" class="nav-tab-mobile relative flex flex-col items-center justify-center py-2 px-1 rounded-xl text-slate-400 font-semibold text-xs transition cursor-pointer">
+        <div class="relative">
+          <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+          <span id="mobileBadgeCount" class="absolute -top-1 -right-3 bg-orange-500 text-white text-[10px] font-extrabold px-1.5 rounded-full">0</span>
+        </div>
+        <span>Реестр / Excel</span>
+      </button>
+
+      <button onclick="switchTab('calc')" id="tab-mobile-calc" class="nav-tab-mobile flex flex-col items-center justify-center py-2 px-1 rounded-xl text-slate-400 font-semibold text-xs transition cursor-pointer">
+        <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+        <span>Калькулятор</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- =================================================================== -->
+  <!-- МОДАЛЬНОЕ ОКНО: ИНСТРУКЦИЯ ПО УСТАНОВКЕ PWA НА ТЕЛЕФОН И ПК         -->
+  <!-- =================================================================== -->
+  <div id="installModal" class="hidden fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+        <h3 class="text-lg font-extrabold text-slate-900">Установка как приложение (PWA)</h3>
+        <button onclick="closeInstallModal()" class="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="space-y-4 mt-4 text-sm text-slate-700">
+        <p class="bg-orange-50 border border-orange-200 text-orange-950 p-3 rounded-xl font-medium">
+          Это приложение работает по технологии <strong>PWA</strong>: оно устанавливается на рабочий стол без Google Play и App Store и сохраняет данные даже в траншее или подвале без интернета.
+        </p>
+
+        <!-- Кнопка прямой установки, если браузер поддерживает beforeinstallprompt -->
+        <div id="nativeInstallBox" class="hidden">
+          <button onclick="triggerNativeInstall()" class="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 px-4 rounded-xl shadow cursor-pointer">
+            Установить приложение на это устройство
+          </button>
+        </div>
+
+        <div class="space-y-3">
+          <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+            <h4 class="font-bold text-slate-900 mb-1">📱 На Android (Chrome / Яндекс Браузер):</h4>
+            <ol class="list-decimal list-inside space-y-1 text-slate-600 text-xs sm:text-sm">
+              <li>Нажмите на меню браузера (три точки <strong>⋮</strong> в правом верхнем углу).</li>
+              <li>Выберите пункт <strong>«Установить приложение»</strong> или <strong>«Добавить на гл. экран»</strong>.</li>
+              <li>Иконка «ПТО Помощник» появится на рабочем столе смартфона.</li>
+            </ol>
+          </div>
+
+          <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+            <h4 class="font-bold text-slate-900 mb-1">🍎 На iPhone / iPad (Safari):</h4>
+            <ol class="list-decimal list-inside space-y-1 text-slate-600 text-xs sm:text-sm">
+              <li>Нажмите кнопку <strong>«Поделиться»</strong> (квадрат со стрелкой вверх внизу экрана).</li>
+              <li>Пролистайте вниз и нажмите <strong>«На экран «Домой»»</strong>.</li>
+              <li>Нажмите <strong>«Добавить»</strong> в правом верхнем углу.</li>
+            </ol>
+          </div>
+
+          <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+            <h4 class="font-bold text-slate-900 mb-1">💻 На компьютер (Windows / macOS в Chrome или Edge):</h4>
+            <ol class="list-decimal list-inside space-y-1 text-slate-600 text-xs sm:text-sm">
+              <li>В правой части адресной строки браузера нажмите на иконку монитора со стрелкой (<strong>«Установить ПТО Помощник»</strong>).</li>
+              <li>Приложение откроется в отдельном окне как обычная программа для ПК.</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+
+      <button onclick="closeInstallModal()" class="mt-5 w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl cursor-pointer">
+        Понятно
+      </button>
+    </div>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- МОДАЛЬНОЕ ОКНО ПОДТВЕРЖДЕНИЯ ОЧИСТКИ (ВМЕСТО ALERT/CONFIRM)         -->
+  <!-- =================================================================== -->
+  <div id="confirmClearModal" class="hidden fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200">
+      <h3 class="text-lg font-extrabold text-slate-900">Очистить весь реестр?</h3>
+      <p class="text-sm text-slate-600 mt-2">
+        Все сохраненные записи будут безвозвратно удалены из памяти устройства. Рекомендуем сначала выгрузить данные в Excel.
+      </p>
+      <div class="grid grid-cols-2 gap-3 mt-5">
+        <button onclick="closeClearModal()" class="py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-sm cursor-pointer">
+          Отмена
+        </button>
+        <button onclick="confirmClearAll()" class="py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm cursor-pointer">
+          Да, очистить
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ВСПЛЫВАЮЩЕЕ УВЕДОМЛЕНИЕ (TOAST) -->
+  <div id="toastContainer" class="fixed bottom-20 md:bottom-6 right-4 left-4 md:left-auto md:w-96 z-50 pointer-events-none flex flex-col gap-2"></div>
+
+  <!-- =================================================================== -->
+  <!-- ЛОГИКА ПРИЛОЖЕНИЯ (LOCALSTORAGE, EXCEL EXPORT, PWA, КАЛЬКУЛЯТОР)    -->
+  <!-- =================================================================== -->
+  <script>
+    // Ключ для хранения данных в LocalStorage
+    const STORAGE_KEY = 'pto_helper_records_v1';
+
+    // Состояние приложения
+    let records = [];
+    let deferredInstallPrompt = null;
+
+    // -------------------------------------------------------------------
+    // 1. ИНИЦИАЛИЗАЦИЯ PWA (ВСТРОЕННЫЙ MANIFEST И SERVICE WORKER)
+    // -------------------------------------------------------------------
+    function initPWA() {
+      try {
+        // Генерируем SVG-иконку приложения для манифеста
+        const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="110" fill="#0f172a"/><rect x="96" y="96" width="320" height="320" rx="60" fill="#ea580c"/><path d="M180 200h152M180 260h152M180 320h96" stroke="#ffffff" stroke-width="32" stroke-linecap="round"/></svg>`;
+        const iconUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(iconSvg)));
+
+        // Динамический manifest.json через Blob URL
+        const manifest = {
+          name: 'ПТО Помощник — Полевой сборщик ИД',
+          short_name: 'ПТО Помощник',
+          description: 'Офлайн сборщик данных на стройплощадке и выгрузка реестров ИД в Excel',
+          start_url: location.href,
+          display: 'standalone',
+          background_color: '#f1f5f9',
+          theme_color: '#0f172a',
+          icons: [
+            { src: iconUrl, sizes: '192x192', type: 'image/svg+xml' },
+            { src: iconUrl, sizes: '512x512', type: 'image/svg+xml' }
+          ]
+        };
+        const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+        const manifestLink = document.createElement('link');
+        manifestLink.rel = 'manifest';
+        manifestLink.href = URL.createObjectURL(manifestBlob);
+        document.head.appendChild(manifestLink);
+
+        // Регистрация базового Service Worker для кэширования (если окружение поддерживает https/localhost)
+        if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+          const swCode = `
+            const CACHE_NAME = 'pto-helper-cache-v1';
+            self.addEventListener('install', (e) => {
+              self.skipWaiting();
+            });
+            self.addEventListener('activate', (e) => {
+              e.waitUntil(clients.claim());
+            });
+            self.addEventListener('fetch', (e) => {
+              e.respondWith(
+                fetch(e.request).catch(() => caches.match(e.request))
+              );
+            });
+          `;
+          const swBlob = new Blob([swCode], { type: 'application/javascript' });
+          navigator.serviceWorker.register(URL.createObjectURL(swBlob)).catch(() => {
+            // Игнорируем в изолированных песочницах, LocalStorage всё равно работает офлайн
+          });
+        }
+      } catch (err) {
+        console.warn('PWA init warning:', err);
+      }
+
+      // Перехват системного события установки PWA
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredInstallPrompt = e;
+        const nativeBox = document.getElementById('nativeInstallBox');
+        if (nativeBox) nativeBox.classList.remove('hidden');
+      });
+
+      // Отслеживание онлайн/офлайн статуса сети
+      updateNetworkStatus();
+      window.addEventListener('online', updateNetworkStatus);
+      window.addEventListener('offline', updateNetworkStatus);
+    }
+
+    function updateNetworkStatus() {
+      const dot = document.getElementById('statusDot');
+      const text = document.getElementById('statusText');
+      if (navigator.onLine) {
+        dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+        text.textContent = 'Сеть есть • Офлайн-база активна';
+      } else {
+        dot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
+        text.textContent = 'Автономный режим (Без сети • LocalStorage)';
+      }
+    }
+
+    function triggerNativeInstall() {
+      if (deferredInstallPrompt) {
+        deferredInstallPrompt.prompt();
+        deferredInstallPrompt.userChoice.then(() => {
+          deferredInstallPrompt = null;
+          closeInstallModal();
+        });
+      }
+    }
+
+    // -------------------------------------------------------------------
+    // 2. РАБОТА С ДАННЫМИ (LOCALSTORAGE И ДЕМО-ПРИМЕРЫ)
+    // -------------------------------------------------------------------
+    function loadRecords() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          records = JSON.parse(raw);
+        } else {
+          // При самом первом запуске загружаем реалистичные демо-данные, чтобы сразу показать работу клиенту
+          loadDemoData(false);
+        }
+      } catch (e) {
+        console.error('Ошибка чтения LocalStorage:', e);
+        records = [];
+      }
+      updateCountersAndObjects();
+      renderRegistry();
+    }
+
+    function saveRecords() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+      } catch (e) {
+        showToast('Ошибка сохранения в память устройства', 'error');
+      }
+      updateCountersAndObjects();
+      renderRegistry();
+    }
+
+    function getTodayDateString() {
+      const now = new Date();
+      const offset = now.getTimezoneOffset();
+      const local = new Date(now.getTime() - offset * 60 * 1000);
+      return local.toISOString().split('T')[0];
+    }
+
+    // Загрузка реалистичных тестовых примеров ПТО
+    function loadDemoData(notify = true) {
+      const today = getTodayDateString();
+      const demoItems = [
+        {
+          id: 'demo_' + Date.now() + '_1',
+          date: today,
+          object: 'Газопровод высокого давления, ПК 12+50',
+          workType: 'Сварочно-монтажные работы',
+          element: 'Стык №14 (Труба 159х6 ст.20)',
+          docNumber: 'ВИК №42 / РК №19',
+          volume: 1,
+          unit: 'стык',
+          status: 'Готово к сдаче',
+          note: 'Клеймо сварщика А-14, замечаний по контролю нет'
+        },
+        {
+          id: 'demo_' + Date.now() + '_2',
+          date: today,
+          object: 'Газопровод высокого давления, ПК 12+50',
+          workType: 'Входной контроль материалов',
+          element: 'Труба стальная электросварная 159х6 ст.20',
+          docNumber: 'Сертификат №4821-К от 10.10',
+          volume: 120,
+          unit: 'пог. м',
+          status: 'Готово к сдаче',
+          note: 'Партия №118, бирки сверены, акт ВК №12 подписан'
+        },
+        {
+          id: 'demo_' + Date.now() + '_3',
+          date: today,
+          object: 'Узел запорной арматуры УЗА-2',
+          workType: 'Изоляция и антикор',
+          element: 'Огрунтовка и изоляция стыков термоусаживающейся манжетой',
+          docNumber: 'Паспорт партии ТИАЛ №904',
+          volume: 14.5,
+          unit: 'м²',
+          status: 'В работе',
+          note: 'Ожидается замер адгезии и диэлектрической сплошности'
+        },
+        {
+          id: 'demo_' + Date.now() + '_4',
+          date: today,
+          object: 'Узел запорной арматуры УЗА-2',
+          workType: 'Земляные работы',
+          element: 'Разработка траншеи с устройством песчаного основания',
+          docNumber: 'Исполн. схема №ИС-08',
+          volume: 85,
+          unit: 'м³',
+          status: 'Замечание стройконтроля',
+          note: 'Замечание СК: приложить протокол уплотнения песчаной подушки'
+        }
+      ];
+
+      records = [...demoItems, ...records];
+      saveRecords();
+      if (notify) {
+        showToast('Добавлено 4 демо-записи ПТО для презентации', 'success');
+      }
+    }
+
+    // -------------------------------------------------------------------
+    // 3. ОБРАБОТКА ФОРМЫ ВВОДА И РЕДАКТИРОВАНИЯ
+    // -------------------------------------------------------------------
+    function selectStatus(statusValue) {
+      document.getElementById('fieldStatus').value = statusValue;
+      const buttons = document.querySelectorAll('.status-btn');
+      buttons.forEach((btn) => {
+        const val = btn.getAttribute('data-status');
+        btn.className = 'status-btn flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl border-2 text-sm font-bold transition cursor-pointer ';
+        if (val === statusValue) {
+          if (val === 'Готово к сдаче') {
+            btn.className += 'border-emerald-600 bg-emerald-50 text-emerald-950 shadow-sm';
+          } else if (val === 'В работе') {
+            btn.className += 'border-amber-500 bg-amber-50 text-amber-950 shadow-sm';
+          } else {
+            btn.className += 'border-rose-600 bg-rose-50 text-rose-950 shadow-sm';
+          }
+        } else {
+          btn.className += 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100';
+        }
+      });
+    }
+
+    function handleFormSubmit(e) {
+      e.preventDefault();
+
+      const editId = document.getElementById('editRecordId').value;
+      const recordData = {
+        id: editId || ('rec_' + Date.now()),
+        object: document.getElementById('fieldObject').value.trim(),
+        workType: document.getElementById('fieldWorkType').value,
+        date: document.getElementById('fieldDate').value,
+        element: document.getElementById('fieldElement').value.trim(),
+        docNumber: document.getElementById('fieldDocNumber').value.trim(),
+        volume: parseFloat(document.getElementById('fieldVolume').value) || 0,
+        unit: document.getElementById('fieldUnit').value,
+        status: document.getElementById('fieldStatus').value,
+        note: document.getElementById('fieldNote').value.trim()
+      };
+
+      if (editId) {
+        const idx = records.findIndex((r) => r.id === editId);
+        if (idx !== -1) {
+          records[idx] = recordData;
+        }
+        cancelEdit();
+        showToast('Запись успешно обновлена', 'success');
+      } else {
+        records.unshift(recordData);
+        // Сохраняем объект и вид работ для быстрого ввода следующей позиции на участке
+        document.getElementById('fieldElement').value = '';
+        document.getElementById('fieldDocNumber').value = '';
+        document.getElementById('fieldVolume').value = '';
+        document.getElementById('fieldNote').value = '';
+        showToast('Запись сохранена в локальный реестр!', 'success');
+      }
+
+      saveRecords();
+    }
+
+    function editRecord(id) {
+      const item = records.find((r) => r.id === id);
+      if (!item) return;
+
+      document.getElementById('editRecordId').value = item.id;
+      document.getElementById('fieldObject').value = item.object;
+      document.getElementById('fieldWorkType').value = item.workType;
+      document.getElementById('fieldDate').value = item.date;
+      document.getElementById('fieldElement').value = item.element;
+      document.getElementById('fieldDocNumber').value = item.docNumber;
+      document.getElementById('fieldVolume').value = item.volume;
+      document.getElementById('fieldUnit').value = item.unit;
+      document.getElementById('fieldNote').value = item.note;
+      selectStatus(item.status);
+
+      document.getElementById('editBanner').classList.remove('hidden');
+      document.getElementById('submitBtnText').textContent = 'Сохранить изменения';
+
+      switchTab('form');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function cancelEdit() {
+      document.getElementById('editRecordId').value = '';
+      document.getElementById('editBanner').classList.add('hidden');
+      document.getElementById('submitBtnText').textContent = 'Сохранить в реестр (Офлайн)';
+      document.getElementById('fieldElement').value = '';
+      document.getElementById('fieldDocNumber').value = '';
+      document.getElementById('fieldVolume').value = '';
+      document.getElementById('fieldNote').value = '';
+      selectStatus('В работе');
+    }
+
+    function deleteRecord(id) {
+      records = records.filter((r) => r.id !== id);
+      saveRecords();
+      showToast('Запись удалена из реестра', 'info');
+    }
+
+    // Быстрое переключение статуса прямо из карточки/таблицы реестра
+    function cycleStatus(id) {
+      const order = ['В работе', 'Готово к сдаче', 'Замечание стройконтроля'];
+      const item = records.find((r) => r.id === id);
+      if (!item) return;
+      const nextIdx = (order.indexOf(item.status) + 1) % order.length;
+      item.status = order[nextIdx];
+      saveRecords();
+      showToast(`Статус изменен: ${item.status}`, 'info');
+    }
+
+    // -------------------------------------------------------------------
+    // 4. ОТРИСОВКА РЕЕСТРА (КАРТОЧКИ НА МОБИЛЬНОМ + ТАБЛИЦА НА ПК)
+    // -------------------------------------------------------------------
+    function getStatusBadge(status) {
+      if (status === 'Готово к сдаче') {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-900 border border-emerald-200"><span class="w-2 h-2 rounded-full bg-emerald-600"></span>Готово к сдаче</span>`;
+      }
+      if (status === 'Замечание стройконтроля') {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-rose-100 text-rose-900 border border-rose-200"><span class="w-2 h-2 rounded-full bg-rose-600"></span>Замечание СК</span>`;
+      }
+      return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-900 border border-amber-200"><span class="w-2 h-2 rounded-full bg-amber-500"></span>В работе</span>`;
+    }
+
+    function formatDateRu(isoDate) {
+      if (!isoDate) return '—';
+      const parts = isoDate.split('-');
+      if (parts.length !== 3) return isoDate;
+      return `${parts[2]}.${parts[1]}.${parts[0]}`;
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function renderRegistry() {
+      const container = document.getElementById('registryContainer');
+      const query = (document.getElementById('searchInput').value || '').toLowerCase().trim();
+      const filterWork = document.getElementById('filterWorkType').value;
+      const filterStatus = document.getElementById('filterStatus').value;
+
+      const filtered = records.filter((item) => {
+        const matchesWork = filterWork === 'ALL' || item.workType === filterWork;
+        const matchesStatus = filterStatus === 'ALL' || item.status === filterStatus;
+        const matchesQuery =
+          !query ||
+          item.object.toLowerCase().includes(query) ||
+          item.element.toLowerCase().includes(query) ||
+          (item.docNumber && item.docNumber.toLowerCase().includes(query)) ||
+          (item.note && item.note.toLowerCase().includes(query));
+        return matchesWork && matchesStatus && matchesQuery;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="bg-white rounded-2xl border border-slate-200 p-8 text-center">
+            <div class="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            </div>
+            <h3 class="font-bold text-slate-900 text-base">Записи не найдены</h3>
+            <p class="text-sm text-slate-500 mt-1">Измените параметры фильтра или добавьте новую позицию на вкладке ввода.</p>
+          </div>
+        `;
+        return;
+      }
+
+      // 1. Мобильное представление (Крупные информативные карточки)
+      const mobileCardsHtml = `
+        <div class="md:hidden space-y-3">
+          ${filtered
+            .map(
+              (item, idx) => `
+            <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-2.5">
+              <div class="flex items-start justify-between gap-2">
+                <span class="text-xs font-bold text-slate-400">#${filtered.length - idx} • ${formatDateRu(item.date)}</span>
+                <button type="button" onclick="cycleStatus('${item.id}')" title="Нажмите, чтобы сменить статус" class="cursor-pointer active:scale-95 transition">
+                  ${getStatusBadge(item.status)}
+                </button>
+              </div>
+
+              <div>
+                <div class="text-xs font-semibold text-orange-600">${escapeHtml(item.object)}</div>
+                <h4 class="font-extrabold text-slate-900 text-base mt-0.5 leading-snug">${escapeHtml(item.element)}</h4>
+                <div class="text-xs text-slate-500 mt-0.5">${escapeHtml(item.workType)}</div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-xs">
+                <div>
+                  <span class="text-slate-400 block">Объем:</span>
+                  <strong class="text-slate-900 text-sm">${item.volume} ${escapeHtml(item.unit)}</strong>
+                </div>
+                <div>
+                  <span class="text-slate-400 block">Паспорт / Сертификат:</span>
+                  <strong class="text-slate-800">${escapeHtml(item.docNumber || 'Не указан')}</strong>
+                </div>
+              </div>
+
+              ${
+                item.note
+                  ? `<div class="text-xs text-slate-600 bg-amber-50/60 border border-amber-100 px-3 py-2 rounded-xl">${escapeHtml(item.note)}</div>`
+                  : ''
+              }
+
+              <div class="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
+                <button type="button" onclick="editRecord('${item.id}')" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center gap-1 cursor-pointer">
+                  Изменить
+                </button>
+                <button type="button" onclick="deleteRecord('${item.id}')" class="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs flex items-center gap-1 cursor-pointer">
+                  Удалить
+                </button>
+              </div>
+            </div>
+          `
+            )
+            .join('')}
+        </div>
+      `;
+
+      // 2. Десктопное представление (Структурированная таблица ПТО)
+      const desktopTableHtml = `
+        <div class="hidden md:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-900 text-white text-xs uppercase tracking-wider">
+                  <th class="py-3.5 px-4 font-bold">Дата</th>
+                  <th class="py-3.5 px-4 font-bold">Объект / Вид работ</th>
+                  <th class="py-3.5 px-4 font-bold">Элемент / Материал / Стык</th>
+                  <th class="py-3.5 px-4 font-bold">№ Паспорта / Серт.</th>
+                  <th class="py-3.5 px-4 font-bold text-right">Объем</th>
+                  <th class="py-3.5 px-4 font-bold">Статус ИД (клик)</th>
+                  <th class="py-3.5 px-4 font-bold text-right">Действия</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-200 text-sm">
+                ${filtered
+                  .map(
+                    (item) => `
+                  <tr class="hover:bg-slate-50 transition">
+                    <td class="py-3.5 px-4 whitespace-nowrap font-medium text-slate-600">${formatDateRu(item.date)}</td>
+                    <td class="py-3.5 px-4">
+                      <div class="font-bold text-slate-900">${escapeHtml(item.object)}</div>
+                      <div class="text-xs text-slate-500 mt-0.5">${escapeHtml(item.workType)}</div>
+                    </td>
+                    <td class="py-3.5 px-4">
+                      <div class="font-bold text-slate-900">${escapeHtml(item.element)}</div>
+                      ${item.note ? `<div class="text-xs text-slate-500 mt-0.5">${escapeHtml(item.note)}</div>` : ''}
+                    </td>
+                    <td class="py-3.5 px-4 font-medium text-slate-700">${escapeHtml(item.docNumber || '—')}</td>
+                    <td class="py-3.5 px-4 text-right whitespace-nowrap font-extrabold text-slate-900">
+                      ${item.volume} <span class="font-normal text-slate-500">${escapeHtml(item.unit)}</span>
+                    </td>
+                    <td class="py-3.5 px-4 whitespace-nowrap">
+                      <button type="button" onclick="cycleStatus('${item.id}')" title="Нажмите для быстрой смены статуса" class="cursor-pointer hover:opacity-80 transition">
+                        ${getStatusBadge(item.status)}
+                      </button>
+                    </td>
+                    <td class="py-3.5 px-4 whitespace-nowrap text-right">
+                      <div class="inline-flex items-center gap-1.5">
+                        <button type="button" onclick="editRecord('${item.id}')" class="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer" title="Редактировать">
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                        </button>
+                        <button type="button" onclick="deleteRecord('${item.id}')" class="p-2 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition cursor-pointer" title="Удалить">
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                `
+                  )
+                  .join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+
+      container.innerHTML = mobileCardsHtml + desktopTableHtml;
+    }
+
+    function updateCountersAndObjects() {
+      const total = records.length;
+      const ready = records.filter((r) => r.status === 'Готово к сдаче').length;
+      const issues = records.filter((r) => r.status === 'Замечание стройконтроля').length;
+
+      document.getElementById('headerCounter').textContent = total;
+      document.getElementById('desktopBadgeCount').textContent = total;
+      document.getElementById('mobileBadgeCount').textContent = total;
+      document.getElementById('formBtnCounter').textContent = total;
+      document.getElementById('regTotalCount').textContent = total;
+      document.getElementById('regReadyCount').textContent = ready;
+      document.getElementById('regIssueCount').textContent = issues;
+
+      // Обновляем список уникальных объектов для автодополнения и быстрых чипсов
+      const uniqueObjects = [...new Set(records.map((r) => r.object).filter(Boolean))].slice(0, 5);
+      const datalist = document.getElementById('savedObjectsList');
+      datalist.innerHTML = uniqueObjects.map((obj) => `<option value="${escapeHtml(obj)}">`).join('');
+
+      const chipsContainer = document.getElementById('quickObjectsChips');
+      if (uniqueObjects.length > 0) {
+        chipsContainer.innerHTML = uniqueObjects
+          .slice(0, 3)
+          .map(
+            (obj) => `
+            <button type="button" onclick="setObjectField('${escapeHtml(obj).replace(/'/g, "\\'")}')" class="text-xs bg-slate-100 hover:bg-orange-100 text-slate-700 hover:text-orange-900 px-2.5 py-1 rounded-lg border border-slate-200 truncate max-w-[260px] transition cursor-pointer">
+              📍 ${escapeHtml(obj)}
+            </button>
+          `
+          )
+          .join('');
+      } else {
+        chipsContainer.innerHTML = '';
+      }
+    }
+
+    function setObjectField(val) {
+      document.getElementById('fieldObject').value = val;
+    }
+
+    // -------------------------------------------------------------------
+    // 5. ЭКСПОРТ В НАСТОЯЩИЙ EXCEL (.XLSX) С ФОЛБЭКОМ НА CSV (UTF-8 BOM)
+    // -------------------------------------------------------------------
+    function exportToExcel() {
+      if (records.length === 0) {
+        showToast('Реестр пуст! Сначала добавьте хотя бы одну запись.', 'error');
+        return;
+      }
+
+      const dateStamp = getTodayDateString();
+      const baseFilename = `Реестр_ИД_ПТО_${dateStamp}`;
+
+      // Формируем массив строк со строгими заголовками ПТО
+      const rows = records.map((item, index) => ({
+        '№ п/п': index + 1,
+        'Дата': formatDateRu(item.date),
+        'Объект/Участок': item.object,
+        'Вид работ': item.workType,
+        'Наименование/Стык': item.element,
+        '№ Паспорта/Сертификата': item.docNumber || '',
+        'Объем': Number(item.volume),
+        'Ед. изм.': item.unit,
+        'Статус ИД': item.status,
+        'Примечание': item.note || ''
+      }));
+
+      // Проверяем, загрузилась ли библиотека SheetJS (XLSX)
+      if (typeof XLSX !== 'undefined') {
+        try {
+          const worksheet = XLSX.utils.json_to_sheet(rows);
+
+          // Настраиваем комфортную ширину колонок в Excel
+          worksheet['!cols'] = [
+            { wch: 7 },  // № п/п
+            { wch: 12 }, // Дата
+            { wch: 32 }, // Объект/Участок
+            { wch: 28 }, // Вид работ
+            { wch: 34 }, // Наименование/Стык
+            { wch: 24 }, // № Паспорта/Сертификата
+            { wch: 10 }, // Объем
+            { wch: 10 }, // Ед. изм.
+            { wch: 22 }, // Статус ИД
+            { wch: 35 }  // Примечание
+          ];
+
+          const workbook = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(workbook, worksheet, 'Реестр ИД');
+          XLSX.writeFile(workbook, `${baseFilename}.xlsx`);
+
+          showToast(`Файл ${baseFilename}.xlsx успешно сформирован!`, 'success');
+          return;
+        } catch (err) {
+          console.error('Ошибка генерации XLSX, переключаемся на CSV:', err);
+        }
+      }
+
+      // Резервный фолбэк: CSV с разделителем ; и UTF-8 BOM (корректно открывается в русском Excel без иероглифов)
+      try {
+        const headers = Object.keys(rows[0]);
+        const csvLines = [
+          headers.join(';'),
+          ...rows.map((row) =>
+            headers
+              .map((h) => {
+                let val = row[h] === null || row[h] === undefined ? '' : String(row[h]);
+                // Для чисел в русском Excel заменяем точку на запятую
+                if (h === 'Объем') val = val.replace('.', ',');
+                val = val.replace(/"/g, '""');
+                return `"${val}"`;
+              })
+              .join(';')
+          )
+        ];
+        const csvContent = '\uFEFF' + csvLines.join('\r\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `${baseFilename}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        showToast(`Офлайн-резерв: выгружен файл ${baseFilename}.csv для Excel`, 'success');
+      } catch (csvErr) {
+        showToast('Не удалось сформировать файл выгрузки', 'error');
+      }
+    }
+
+    // -------------------------------------------------------------------
+    // 6. КАЛЬКУЛЯТОР ИНЖЕНЕРА ПТО (ТРУБЫ: ПЛОЩАДЬ И ВЕС)
+    // -------------------------------------------------------------------
+    function applyPipePreset(d, s) {
+      document.getElementById('calcDiameter').value = d;
+      document.getElementById('calcWall').value = s;
+      calculatePipe();
+    }
+
+    function calculatePipe() {
+      const d = parseFloat(document.getElementById('calcDiameter').value) || 0; // мм
+      const s = parseFloat(document.getElementById('calcWall').value) || 0;     // мм
+      const l = parseFloat(document.getElementById('calcLength').value) || 0;   // м
+
+      // Площадь наружной поверхности 1 пог. м: pi * (D / 1000)
+      const areaPerMeter = Math.PI * (d / 1000);
+      const totalArea = areaPerMeter * l;
+
+      // Теоретическая масса 1 пог. м стальной трубы по ГОСТ: 0.0246615 * S * (D - S), кг/м
+      const validWall = s > 0 && d > s ? s : 0;
+      const weightPerMeter = validWall > 0 ? 0.0246615 * validWall * (d - validWall) : 0;
+      const totalWeightKg = weightPerMeter * l;
+      const totalWeightTons = totalWeightKg / 1000;
+
+      document.getElementById('resAreaPerMeter').textContent = areaPerMeter.toFixed(3);
+      document.getElementById('resArea').textContent = totalArea.toFixed(2);
+
+      document.getElementById('resWeightPerMeter').textContent = weightPerMeter.toFixed(2);
+      document.getElementById('resWeightKg').textContent = totalWeightKg.toFixed(1);
+      document.getElementById('resWeightTons').textContent = totalWeightTons.toFixed(3);
+    }
+
+    // Перенос результата расчета прямо в форму реестра ИД
+    function transferCalcToForm(mode) {
+      const d = parseFloat(document.getElementById('calcDiameter').value) || 0;
+      const s = parseFloat(document.getElementById('calcWall').value) || 0;
+      const l = parseFloat(document.getElementById('calcLength').value) || 0;
+
+      cancelEdit();
+
+      if (mode === 'area') {
+        const area = parseFloat(document.getElementById('resArea').textContent) || 0;
+        document.getElementById('fieldWorkType').value = 'Изоляция и антикор';
+        document.getElementById('fieldElement').value = `Изоляция / окраска трубопровода Ø${d}×${s} (L=${l} м)`;
+        document.getElementById('fieldVolume').value = area;
+        document.getElementById('fieldUnit').value = 'м²';
+        document.getElementById('fieldNote').value = `Расчет по калькулятору ПТО: Ø${d} мм, длина ${l} пог. м`;
+      } else {
+        const tons = parseFloat(document.getElementById('resWeightTons').textContent) || 0;
+        document.getElementById('fieldWorkType').value = 'Входной контроль материалов';
+        document.getElementById('fieldElement').value = `Труба стальная Ø${d}×${s} (L=${l} м)`;
+        document.getElementById('fieldVolume').value = tons;
+        document.getElementById('fieldUnit').value = 'т';
+        document.getElementById('fieldNote').value = `Теоретический вес по ГОСТ: длина ${l} пог. м`;
+      }
+
+      switchTab('form');
+      showToast('Данные из калькулятора перенесены в форму!', 'success');
+    }
+
+    // -------------------------------------------------------------------
+    // 7. НАВИГАЦИЯ ПО ВКЛАДКАМ И МОДАЛЬНЫЕ ОКНА
+    // -------------------------------------------------------------------
+    function switchTab(tabName) {
+      const views = ['form', 'registry', 'calc'];
+      views.forEach((v) => {
+        const el = document.getElementById(`view-${v}`);
+        if (v === tabName) {
+          el.classList.remove('hidden');
+        } else {
+          el.classList.add('hidden');
+        }
+
+        // Обновление стилей десктопных кнопок
+        const dBtn = document.getElementById(`tab-desktop-${v}`);
+        if (dBtn) {
+          if (v === tabName) {
+            dBtn.className = 'nav-tab-desktop flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition bg-orange-600 text-white cursor-pointer';
+          } else {
+            dBtn.className = 'nav-tab-desktop flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition text-slate-300 hover:bg-slate-800 cursor-pointer';
+          }
+        }
+
+        // Обновление стилей мобильных кнопок
+        const mBtn = document.getElementById(`tab-mobile-${v}`);
+        if (mBtn) {
+          if (v === tabName) {
+            mBtn.className = 'nav-tab-mobile relative flex flex-col items-center justify-center py-2 px-1 rounded-xl text-orange-400 bg-slate-800 font-bold text-xs transition cursor-pointer';
+          } else {
+            mBtn.className = 'nav-tab-mobile relative flex flex-col items-center justify-center py-2 px-1 rounded-xl text-slate-400 font-semibold text-xs transition cursor-pointer';
+          }
+        }
+      });
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function openInstallModal() {
+      document.getElementById('installModal').classList.remove('hidden');
+    }
+
+    function closeInstallModal() {
+      document.getElementById('installModal').classList.add('hidden');
+    }
+
+    function requestClearAll() {
+      if (records.length === 0) {
+        showToast('Реестр уже пуст', 'info');
+        return;
+      }
+      document.getElementById('confirmClearModal').classList.remove('hidden');
+    }
+
+    function closeClearModal() {
+      document.getElementById('confirmClearModal').classList.add('hidden');
+    }
+
+    function confirmClearAll() {
+      records = [];
+      saveRecords();
+      closeClearModal();
+      showToast('Реестр полностью очищен', 'info');
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+
+      let colors = 'bg-slate-900 text-white border-slate-700';
+      if (type === 'success') colors = 'bg-emerald-700 text-white border-emerald-500';
+      if (type === 'error') colors = 'bg-rose-700 text-white border-rose-500';
+
+      toast.className = `toast-enter pointer-events-auto px-4 py-3 rounded-xl shadow-xl border text-sm font-bold flex items-center justify-between gap-2 ${colors}`;
+      toast.innerHTML = `<span>${escapeHtml(message)}</span>`;
+
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.25s ease';
+        setTimeout(() => toast.remove(), 250);
+      }, 2800);
+    }
+
+    // Запуск при загрузке страницы
+    window.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('fieldDate').value = getTodayDateString();
+      selectStatus('В работе');
+      calculatePipe();
+      loadRecords();
+      initPWA();
+    });
+  </script>
+</body>
+</html>
